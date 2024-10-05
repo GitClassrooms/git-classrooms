@@ -1,20 +1,21 @@
+# syntax=docker/dockerfile:1.7-labs
 #############################################
-# Preparer go
+#                Preparer go                #
 #############################################
 FROM golang:1.22-alpine AS preparer-go
 
 RUN apk add --no-cache make git
 
 WORKDIR /app/build
+RUN mkdir -p ./frontend/dist && touch ./frontend/dist/robots.txt
 
 COPY ./Makefile ./go.mod ./go.sum ./
 RUN make setup/ci
-COPY ./ ./
-
+COPY --exclude=frontend ./ ./
 RUN go generate
 
 #############################################
-# Swagger client
+#              Swagger client               #
 #############################################
 FROM swaggerapi/swagger-codegen-cli-v3 AS swagger-client-builder
 
@@ -31,7 +32,7 @@ RUN cd swagger-client && \
     done
 
 #############################################
-# Builder web
+#                Builder web                #
 #############################################
 FROM node:20-alpine AS builder-web
 
@@ -44,7 +45,7 @@ COPY --from=swagger-client-builder /app/build/swagger-client ./src/swagger-clien
 RUN yarn build
 
 #############################################
-# Builder go
+#                Builder go                 #
 #############################################
 FROM preparer-go AS builder-go
 
@@ -54,6 +55,7 @@ ARG APP_GIT_BRANCH="develop"
 ARG APP_GIT_REPOSITORY="https://github.com/git-classrooms/git-classrooms"
 ARG APP_BUILD_TIME="unknown"
 
+COPY --from=builder-web /app/build/dist ./frontend/dist
 RUN make build \
     APP_VERSION=${APP_VERSION} \
     APP_GIT_COMMIT=${APP_GIT_COMMIT} \
@@ -61,12 +63,12 @@ RUN make build \
     APP_GIT_REPOSITORY=${APP_GIT_REPOSITORY} \
     APP_BUILD_TIME=${APP_BUILD_TIME}
 
+
 #############################################
-# Runtime image
+#               Runtime image               #
 #############################################
 FROM alpine:3.18 AS release
 
-ENV FRONTEND_PATH=/app/public
 ENV PORT=3000
 EXPOSE 3000
 
@@ -77,6 +79,5 @@ USER gorunner
 WORKDIR /app
 
 COPY --chown=gorunner:gorunner --from=builder-go /app/build/bin/git-classrooms /app/git-classrooms
-COPY --chown=gorunner:gorunner --from=builder-web /app/build/dist /app/public
 
 ENTRYPOINT ["/app/git-classrooms"]
