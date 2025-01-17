@@ -7,6 +7,7 @@ tmp
 ### dotenv ###
 !.env.example
 .env*
+!.envrc
 
 ### Gorm Gen ###
 model/database/query
@@ -23,3 +24,4 @@ docs/swagger.yaml
 
 public/*
 !frontend/public/*
+.pre-commit-config.yaml
