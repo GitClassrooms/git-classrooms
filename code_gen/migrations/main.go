@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -31,7 +30,7 @@ var postgresPort = "30000"
 var postgresUser = "postgres"
 var postgresPassword = "postgres"
 
-func main() {
+func run() int {
 	log.SetOutput(os.Stderr)
 	// Start a postgres container...
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -62,78 +61,55 @@ func main() {
 		log.Fatal("failed to create postgres container", err)
 	}
 
-	var wg sync.WaitGroup
-	exitCodeChan := make(chan int, 1)
-	wg.Add(1)
+	defer cli.ContainerRemove(context.Background(), dbID, container.RemoveOptions{Force: true, RemoveVolumes: true})
 
-	go func() {
-		defer wg.Done()
-		<-ctx.Done()
-		if cli.ContainerRemove(context.Background(), dbID, container.RemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
-			log.Println("failed to remove container", err)
-		}
-	}()
+	db, err := WaitForDBConnection(ctx, cli, dbID)
+	if err != nil {
+		log.Fatal("failed to connect to db", err)
+	}
 
-	wg.Add(1)
+	if _, err = db.Exec("CREATE DATABASE gorm;"); err != nil {
+		log.Fatal("failed to create database", err)
+	}
+	if _, err = db.Exec("CREATE DATABASE goose;"); err != nil {
+		log.Fatal("failed to create database", err)
+	}
 
-	go func() {
-		defer wg.Done()
-		defer cancel()
-		defer func() { exitCodeChan <- 1 }()
-		// connect to db and create dbs
-		db, err := WaitForDBConnection(ctx, cli, dbID)
-		if err != nil {
-			log.Println("failed to connect to db", err)
-			return
-		}
+	var wg errgroup.Group
+	wg.SetLimit(2)
+	log.Println("Migrating databases")
 
-		if _, err = db.Exec("CREATE DATABASE gorm;"); err != nil {
-			log.Println("failed to create database", err)
-			return
-		}
-		if _, err = db.Exec("CREATE DATABASE goose;"); err != nil {
-			log.Println("failed to create database", err)
-			return
-		}
+	wg.Go(func() error {
+		// Connect gorm to the postgres container on the first db
+		return MigrateGormDatabase()
+	})
 
-		var wg errgroup.Group
-		wg.SetLimit(2)
-		log.Println("Migrating databases")
+	wg.Go(func() error {
+		// Connect goose to the second postgres container
+		return MigrateGooseDatabase()
+	})
 
-		wg.Go(func() error {
-			// Connect gorm to the postgres container on the first db
-			return MigrateGormDatabase()
-		})
+	if err := wg.Wait(); err != nil {
+		log.Fatal("failed to migrate databases", err)
+	}
+	log.Println("migrated databases")
 
-		wg.Go(func() error {
-			// Connect goose to the second postgres container
-			return MigrateGooseDatabase()
-		})
+	// docker run -it --rm --network host supabase/migra:3.0.1663481299 migra postgresql://postgres:postgres@localhost:port/goose postgresql://postgres:postgres@localhost:port/postgres
+	logOutput, statusCode, err := runMigraContainer(ctx, cli, migraImage)
+	if err != nil {
+		log.Fatal("failed to run migra", err)
+	}
 
-		if err := wg.Wait(); err != nil {
-			log.Println("failed to migrate databases", err)
-			return
-		}
-		log.Println("migrated databases")
+	if logOutput != nil {
+		defer logOutput.Close()
+		io.Copy(os.Stdout, logOutput)
+	}
 
-		// docker run -it --rm --network host supabase/migra:3.0.1663481299 migra postgresql://postgres:postgres@localhost:port/goose postgresql://postgres:postgres@localhost:port/postgres
-		logOutput, statusCode, err := runMigraContainer(ctx, cli, migraImage)
-		if err != nil {
-			log.Println("failed to run migra", err)
-			return
-		}
+	return statusCode
+}
 
-		if logOutput != nil {
-			defer logOutput.Close()
-			io.Copy(os.Stdout, logOutput)
-		}
-
-		exitCodeChan <- statusCode
-	}()
-
-	exitCode := <-exitCodeChan
-	wg.Wait()
-	os.Exit(exitCode)
+func main() {
+	os.Exit(run())
 }
 
 func MigrateGooseDatabase() error {
