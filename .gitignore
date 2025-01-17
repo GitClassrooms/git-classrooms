@@ -1,5 +1,6 @@
 # Build dir
 tmp
+bin
 
 .idea
 .vscode

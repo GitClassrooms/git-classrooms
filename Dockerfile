@@ -3,16 +3,12 @@
 #############################################
 FROM golang:1.22-alpine AS preparer-go
 
-# install mockery
-RUN go install github.com/vektra/mockery/v2@v2.42.2
-
-# Install swag
-RUN go install github.com/swaggo/swag/cmd/swag@latest
+RUN apk add --no-cache make git
 
 WORKDIR /app/build
 
-COPY ./go.mod ./go.sum ./
-RUN go mod download
+COPY ./Makefile ./go.mod ./go.sum ./
+RUN make setup/ci
 COPY ./ ./
 
 RUN go generate
@@ -52,15 +48,25 @@ RUN yarn build
 #############################################
 FROM preparer-go AS builder-go
 
-ARG APP_VERSION="v0.0.0"
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X main.version=$APP_VERSION" -o /app/build/app
+ARG APP_VERSION="v0.0.0-dev"
+ARG APP_GIT_COMMIT="unknown"
+ARG APP_GIT_BRANCH="develop"
+ARG APP_GIT_REPOSITORY="https://github.com/git-classrooms/git-classrooms"
+ARG APP_BUILD_TIME="unknown"
+
+RUN make build \
+    APP_VERSION=${APP_VERSION} \
+    APP_GIT_COMMIT=${APP_GIT_COMMIT} \
+    APP_GIT_BRANCH=${APP_GIT_BRANCH} \
+    APP_GIT_REPOSITORY=${APP_GIT_REPOSITORY} \
+    APP_BUILD_TIME=${APP_BUILD_TIME}
 
 #############################################
 # Runtime image
 #############################################
 FROM alpine:3.18 AS release
 
-ENV FRONTEND_PATH=/public
+ENV FRONTEND_PATH=/app/public
 ENV PORT=3000
 EXPOSE 3000
 
@@ -68,9 +74,9 @@ RUN adduser -D gorunner
 
 USER gorunner
 
-WORKDIR /
+WORKDIR /app
 
-COPY --chown=gorunner:gorunner --from=builder-go /app/build/app /app
-COPY --chown=gorunner:gorunner --from=builder-web /app/build/dist /public
+COPY --chown=gorunner:gorunner --from=builder-go /app/build/bin/git-classrooms /app/git-classrooms
+COPY --chown=gorunner:gorunner --from=builder-web /app/build/dist /app/public
 
-ENTRYPOINT ["/app"]
+ENTRYPOINT ["/app/git-classrooms"]

@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"tsr watch\" vite",
+    "dev": "concurrently \"yarn dev:tsr\" \"yarn dev:vite\"",
+    "dev:tsr": "tsr watch",
+    "dev:vite": "vite",
     "build": "tsc && vite build",
     "lint": "tsc && eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
