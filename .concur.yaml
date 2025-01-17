@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/akatranlp/concur/refs/heads/main/config.schema.json
+
+prefix: "{{.Time}} {{.Padding}}{{.Name}}"
+padPrefix: true
+
+runBefore:
+  commands:
+    - command: make infra/up
+
+commands:
+  - command: make infra/logs
+    name: infra
+    color: "#093A3E"
+    bold: true
+  - command: air
+    name: backend
+    color: "#64E9EE"
+    bold: true
+  - command: yarn dev:tsr
+    name: tsr
+    cwd: ./frontend
+    color: "#3AAFB9"
+    bold: true
+  - command: yarn dev:vite
+    name: frontend
+    cwd: ./frontend
+    color: "#97C8EB"
+    bold: true
+
+runAfter:
+  commands:
+    - command: make infra/stop

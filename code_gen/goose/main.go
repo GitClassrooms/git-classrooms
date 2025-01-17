@@ -11,6 +11,17 @@ import (
 	"os"
 )
 
+const (
+	mode int = iota + 1
+	command
+	minArgLength
+)
+
+var modeDir = map[string]string{
+	"normal": "model/database/migrations",
+	"seed":   "model/database/seeds",
+}
+
 func main() {
 	args := os.Args
 
@@ -19,7 +30,18 @@ func main() {
 		log.Fatalf("failed to load application config: %v", err)
 	}
 
-	command := args[1]
+	if len(args) < minArgLength {
+		log.Fatalf("goose: invalid number of arguments")
+	}
+
+	mode := args[mode]
+	command := args[command]
+
+	dir, ok := modeDir[mode]
+	if !ok {
+		log.Fatalf("goose: invalid mode")
+	}
+
 	db, err := goose.OpenDBWithDriver("postgres", cfg.Database.Dsn())
 	if err != nil {
 		log.Fatalf("goose: failed to open DB: %v\n", err)
@@ -32,11 +54,11 @@ func main() {
 	}()
 
 	arguments := []string{}
-	if len(args) > 2 {
-		arguments = append(arguments, args[2:]...)
+	if len(args) > minArgLength {
+		arguments = append(arguments, args[minArgLength:]...)
 	}
 
-	if err := goose.RunContext(context.Background(), command, db, "model/database/migrations", arguments...); err != nil {
+	if err := goose.RunContext(context.Background(), command, db, dir, arguments...); err != nil {
 		log.Fatalf("goose %v: %v", command, err)
 	}
 }
