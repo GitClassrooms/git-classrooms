@@ -24,6 +24,7 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  build                             Build"
+	@echo "  build/frontend                    Build frontend"
 	@echo "  generate                          Generate"
 	@echo "  generate/client                   Generate client pkg"
 	@echo "  setup                             Install dependencies"
@@ -62,7 +63,15 @@ run: build
 .PHONY: build
 build: generate
 	@echo "Building binary..."
+	@if [-d "frontend/dist"]; then \
+		$(MAKE) build/frontend; \
+	fi
 	@CGO_ENABLED=0 go build $(GOFLAGS) -o ./bin/$(BINARY_NAME) $(MAIN_PACKAGE_PATH)
+
+.PHONY: build/frontend
+build/frontend:
+	@echo "Building frontend..."
+	@cd frontend && yarn build
 
 .PHONY: setup
 setup:
@@ -82,7 +91,6 @@ setup:
 	# Frontend
 	@cd frontend
 	yarn install
-
 
 .PHONY: setup/ci
 setup/ci:
@@ -108,15 +116,17 @@ clean:
 generate:
 	@echo "Generating code..."
 	@go generate ./...
-	$(MAKE) generate/client
 
 .PHONY: generate/client
 generate/client:
 	@echo "Generating client..."
-	@./script/swagger-codegen.sh
+	@if ! [ -f "docs/swagger.yaml" ]; then \
+		$(MAKE) generate; \
+	fi
+	@cd frontend && yarn generate
 
-.PHONY: docker/build
-docker/build:
+.PHONY: build/docker
+build/docker:
 	@echo "Running docker..."
 	docker build -t $(BINARY_NAME)-docker \
 		--build-arg APP_VERSION=$(APP_VERSION) \
@@ -126,8 +136,8 @@ docker/build:
 		--build-arg APP_BUILD_TIME=$(APP_BUILD_TIME) \
 		.
 
-.PHONY: docker/run
-docker/run:
+.PHONY: run/docker
+run/docker:
 	@echo "Running docker..."
 	docker run -it --env-file .env --rm -p 3000:3000 $(BINARY_NAME)-docker
 
@@ -175,6 +185,16 @@ tidy:
 lint:
 	@echo "Linting..."
 	golangci-lint run
+
+.PHONY: lint/frontend
+lint/frontend:
+	@echo "Linting frontend..."
+	cd frontend && yarn lint
+
+.PHONY: test/frontend
+test/frontend:
+	@echo "Testing frontend..."
+	cd frontend && yarn test
 
 .PHONY: test
 test:

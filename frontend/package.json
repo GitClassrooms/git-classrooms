@@ -8,9 +8,10 @@
     "dev:tsr": "tsr watch",
     "dev:vite": "vite",
     "build": "tsc && vite build",
+    "generate": "cd ../ && ./script/swagger-codegen.sh",
     "lint": "tsc && eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
-    "test": "vitest",
+    "test": "vitest run",
     "test:ci": "vitest run --coverage",
     "format": "prettier --write ."
   },
